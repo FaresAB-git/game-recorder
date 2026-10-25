@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    @apply bg-bg-base text-fg font-sans antialiased;
+    user-select: none;
+  }
+
+  input,
+  select,
+  textarea {
+    user-select: text;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #262b38;
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #343a4b;
+    background-clip: content-box;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.accent.DEFAULT");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 h-9 text-sm font-medium
+           transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent-hover;
+  }
+  .btn-ghost {
+    @apply btn text-fg-muted hover:text-fg hover:bg-bg-hover;
+  }
+  .btn-outline {
+    @apply btn border border-line text-fg-muted hover:text-fg hover:border-line-strong hover:bg-bg-hover;
+  }
+  .btn-danger {
+    @apply btn text-danger hover:bg-danger/10;
+  }
+  .icon-btn {
+    @apply inline-flex items-center justify-center w-9 h-9 rounded-lg text-fg-muted
+           hover:text-fg hover:bg-bg-hover transition-colors;
+  }
+  .card {
+    @apply bg-bg-card border border-line rounded-xl shadow-card;
+  }
+  .input {
+    @apply h-9 bg-bg-surface border border-line rounded-lg px-3 text-sm text-fg
+           focus:outline-none focus:border-accent transition-colors;
+  }
+  .player-btn {
+    @apply w-8 h-8 rounded-lg flex items-center justify-center text-white/85 hover:text-white hover:bg-white/10 transition-colors;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-sm font-medium transition-colors;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+}

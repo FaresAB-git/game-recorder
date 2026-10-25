@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+src-tauri/target/
+
+# FFmpeg binaries (trop lourds pour git — voir src-tauri/binaries/README.md)
+src-tauri/binaries/*.exe
+src-tauri/binaries/*.dll
+
+# Env / secrets
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code (réglages locaux)
+.claude/
+
+# Logs
+*.log
