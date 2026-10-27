@@ -11,7 +11,10 @@ pub struct AppConfig {
     pub min_game_duration_minutes: u32,
     pub resolution: String,
     pub fps: u32,
-    pub bitrate: u32,
+    /// "light" | "balanced" | "high" — constant-quality presets.
+    pub quality: String,
+    /// Use AV1 when the GPU supports it (files ~2x smaller than H.264).
+    pub prefer_av1: bool,
     pub encoder: String,
     pub capture_game_audio: bool,
     pub capture_mic: bool,
@@ -40,7 +43,8 @@ impl Default for AppConfig {
             min_game_duration_minutes: 3,
             resolution: "native".to_string(),
             fps: 60,
-            bitrate: 20000,
+            quality: "balanced".to_string(),
+            prefer_av1: true,
             encoder: "auto".to_string(),
             capture_game_audio: true,
             capture_mic: false,
@@ -65,7 +69,9 @@ impl AppConfig {
         self.max_replays = self.max_replays.clamp(1, 10_000);
         self.min_game_duration_minutes = self.min_game_duration_minutes.min(60);
         self.fps = if self.fps >= 60 { 60 } else { 30 };
-        self.bitrate = self.bitrate.clamp(1000, 150_000);
+        if !matches!(self.quality.as_str(), "light" | "balanced" | "high") {
+            self.quality = "balanced".into();
+        }
         if !matches!(self.resolution.as_str(), "native" | "1080p" | "720p") {
             self.resolution = "native".into();
         }

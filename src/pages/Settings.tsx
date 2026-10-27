@@ -78,13 +78,12 @@ function NumberField({ value, onChange, min, max, step = 1, suffix }: {
   );
 }
 
-const BITRATES = [
-  { value: 8000, label: "8 Mb/s" },
-  { value: 15000, label: "15 Mb/s" },
-  { value: 20000, label: "20 Mb/s" },
-  { value: 35000, label: "35 Mb/s" },
-  { value: 50000, label: "50 Mb/s" },
-];
+// Approximate size of a 30-min 1440p60 game (measured), AV1 / H.264.
+const QUALITY_HINT: Record<AppConfig["quality"], string> = {
+  light: "~1 Go par partie de 30 min en AV1 (~1,5 Go en H.264). Légère perte visible dans les teamfights.",
+  balanced: "~1,3 Go par partie de 30 min en AV1 (~2 Go en H.264). Différence invisible à l'œil.",
+  high: "~1,8 Go par partie de 30 min en AV1 (~3 Go en H.264). Pour les montages.",
+};
 
 export default function Settings() {
   const { config, setConfig, audioDevices, toast, refreshStats } = useStore();
@@ -114,8 +113,6 @@ export default function Settings() {
     const dir = await api.pickOutputDirectory();
     if (dir) set("outputDir", dir);
   }
-
-  const bitrateKnown = BITRATES.some((b) => b.value === local.bitrate);
 
   return (
     <div className="relative h-full flex flex-col">
@@ -150,11 +147,12 @@ export default function Settings() {
               <Segmented value={local.fps} onChange={(v) => set("fps", v)}
                 options={[{ value: 30, label: "30 FPS" }, { value: 60, label: "60 FPS" }]} />
             </Row>
-            <Row label="Qualité (débit)" description="Plus haut = plus beau, mais fichiers plus lourds (~9 Go/h à 20 Mb/s).">
-              <select className="input" value={local.bitrate} onChange={(e) => set("bitrate", Number(e.target.value))}>
-                {!bitrateKnown && <option value={local.bitrate}>{Math.round(local.bitrate / 1000)} Mb/s</option>}
-                {BITRATES.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
-              </select>
+            <Row label="Qualité" description={QUALITY_HINT[local.quality]}>
+              <Segmented value={local.quality} onChange={(v) => set("quality", v)}
+                options={[{ value: "light", label: "Légère" }, { value: "balanced", label: "Équilibrée" }, { value: "high", label: "Haute" }]} />
+            </Row>
+            <Row label="Format AV1" description="Fichiers ~2× plus légers si ta carte le gère (RTX 40, RX 7000, Intel Arc), sinon H.264. Désactive-le si tu partages des clips vers de vieux téléphones.">
+              <Toggle checked={local.preferAv1} onChange={(v) => set("preferAv1", v)} />
             </Row>
             <Row label="Encodeur" description="Automatique choisit ta carte graphique (NVIDIA → AMD → Intel), sinon le processeur.">
               <select className="input" value={local.encoder} onChange={(e) => set("encoder", e.target.value as AppConfig["encoder"])}>

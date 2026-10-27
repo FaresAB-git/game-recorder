@@ -22,7 +22,8 @@ export interface AppConfig {
   minGameDurationMinutes: number;
   resolution: "native" | "1080p" | "720p";
   fps: 30 | 60;
-  bitrate: number; // kbps
+  quality: "light" | "balanced" | "high";
+  preferAv1: boolean;
   encoder: "auto" | "nvenc" | "amf" | "qsv" | "x264";
   captureGameAudio: boolean;
   captureMic: boolean;
@@ -42,7 +43,8 @@ export const defaultConfig: AppConfig = {
   minGameDurationMinutes: 3,
   resolution: "native",
   fps: 60,
-  bitrate: 20000,
+  quality: "balanced",
+  preferAv1: true,
   encoder: "auto",
   captureGameAudio: true,
   captureMic: false,

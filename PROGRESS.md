@@ -229,3 +229,16 @@ Barre de titre custom, sidebar, page Parties (dernière partie en vedette, stats
 par jour), page de replay (lecteur + éditeur de clip à poignées, clips de la partie),
 page Clips, paramètres avec barre « non enregistré », toasts. Icônes : lucide-react.
 Emplacement prévu pour les événements Riot (kills) : `TimelineMarker` dans VideoPlayer.
+
+### Session 5 — 2026-10-27 — Vidéos plus légères
+
+Mesuré sur 30 s d'une vraie game 1440p60 (taille / VMAF) :
+H.264 20 Mb/s fixe ≈ 4,3 Go/30 min (97,8) · AV1 cq34 ≈ 1,3 Go (95,4) · AV1 cq38 ≈ 0,9 Go (93,8).
+- Réglage « débit » remplacé par « qualité » (Légère / Équilibrée / Haute) en qualité
+  constante (NVENC `-cq`, x264 `-crf`) avec plafond `-maxrate` ; AMF/QSV en VBR plafonné.
+- AV1 automatique si le GPU le gère (`av1_nvenc`/`av1_amf`/`av1_qsv`), sinon H.264.
+  Option « Format AV1 » pour revenir au H.264 (compatibilité de partage).
+- Bug corrigé au passage : `scale_d3d11` est cassé dans FFmpeg 8 → capture GPU directe
+  en natif, filtre CPU pour 1080p/720p, bascule CPU automatique si le GPU échoue.
+- Log fichier : `%LOCALAPPDATA%\com.gamerecorder.app\logs\gamerecorder.log`.
+- Version 0.1.1.

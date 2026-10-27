@@ -230,22 +230,28 @@ pub async fn get_duration(video: &Path) -> Option<f64> {
     String::from_utf8_lossy(&output.stdout).trim().parse::<f64>().ok().filter(|d| d.is_finite() && *d > 0.0)
 }
 
-/// Map the user's encoder setting to an FFmpeg encoder name ("auto" probes the GPU).
-pub async fn resolve_encoder(ffmpeg: &Path, requested: &str) -> String {
-    match requested {
-        "nvenc" => "h264_nvenc".to_string(),
-        "amf" => "h264_amf".to_string(),
-        "qsv" => "h264_qsv".to_string(),
-        "x264" => "libx264".to_string(),
-        _ => {
-            for enc in ["h264_nvenc", "h264_amf", "h264_qsv"] {
-                if test_encoder(ffmpeg, enc).await {
-                    return enc.to_string();
-                }
-            }
-            "libx264".to_string()
+/// Pick the FFmpeg encoder for the user's setting. With `av1`, the AV1 variant
+/// of the GPU encoder is preferred when the hardware supports it (RTX 40,
+/// RX 7000, Arc), falling back to H.264.
+pub async fn resolve_encoder(ffmpeg: &Path, requested: &str, av1: bool) -> String {
+    let families: &[(&str, &str)] = match requested {
+        "nvenc" => &[("av1_nvenc", "h264_nvenc")],
+        "amf" => &[("av1_amf", "h264_amf")],
+        "qsv" => &[("av1_qsv", "h264_qsv")],
+        "x264" => return "libx264".to_string(),
+        _ => &[("av1_nvenc", "h264_nvenc"), ("av1_amf", "h264_amf"), ("av1_qsv", "h264_qsv")],
+    };
+    let explicit = requested != "auto";
+    for (av1_enc, h264_enc) in families {
+        if av1 && test_encoder(ffmpeg, av1_enc).await {
+            return av1_enc.to_string();
+        }
+        // An explicit choice is honored even if the probe fails.
+        if explicit || test_encoder(ffmpeg, h264_enc).await {
+            return h264_enc.to_string();
         }
     }
+    "libx264".to_string()
 }
 
 async fn test_encoder(ffmpeg: &Path, encoder: &str) -> bool {

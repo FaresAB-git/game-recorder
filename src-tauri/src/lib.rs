@@ -92,7 +92,8 @@ pub fn run() {
             }
 
             // Probe the encoder now so no test process runs during a game.
-            tauri::async_runtime::spawn(async move { engine.warmup_encoder().await });
+            let (enc_setting, av1) = (config.encoder.clone(), config.prefer_av1);
+            tauri::async_runtime::spawn(async move { engine.warmup_encoder(&enc_setting, av1).await });
             tauri::async_runtime::spawn(detection::run_detection_loop(handle));
             Ok(())
         })

@@ -45,7 +45,8 @@ pub enum EngineError {
 struct VideoParams {
     ffmpeg: PathBuf,
     fps: u32,
-    bitrate_kbps: u32,
+    /// "light" | "balanced" | "high"
+    quality: String,
     enc: String,
     resolution: String,
     game: GameType,
@@ -83,7 +84,8 @@ struct ActiveRecording {
 pub struct RecordingEngine {
     active: Mutex<Option<ActiveRecording>>,
     /// Result of encoder auto-detection, computed once at startup.
-    cached_encoder: Mutex<Option<String>>,
+    /// Encoder resolved for (setting, prefer_av1), probed once.
+    cached_encoder: Mutex<Option<((String, bool), String)>>,
 }
 
 impl RecordingEngine {
@@ -92,26 +94,26 @@ impl RecordingEngine {
     }
 
     /// Probe encoders at app startup so no test process runs during a game.
-    pub async fn warmup_encoder(&self) {
-        if let Some(ffmpeg) = find_ffmpeg() {
-            let enc = resolve_encoder(&ffmpeg, "auto").await;
-            log::info!("Encoder pre-detected at startup: {}", enc);
-            *self.cached_encoder.lock().await = Some(enc);
-        } else {
-            log::error!("FFmpeg not found — recording will not work");
+    pub async fn warmup_encoder(&self, requested: &str, av1: bool) {
+        match find_ffmpeg() {
+            Some(ffmpeg) => {
+                let enc = self.pick_encoder(&ffmpeg, requested, av1).await;
+                log::info!("Encoder pre-detected at startup: {}", enc);
+            }
+            None => log::error!("FFmpeg not found — recording will not work"),
         }
     }
 
-    async fn pick_encoder(&self, ffmpeg: &Path, requested: &str) -> String {
-        if requested != "auto" {
-            return resolve_encoder(ffmpeg, requested).await;
-        }
+    async fn pick_encoder(&self, ffmpeg: &Path, requested: &str, av1: bool) -> String {
+        let key = (requested.to_string(), av1);
         let mut cache = self.cached_encoder.lock().await;
-        if let Some(enc) = cache.as_ref() {
-            return enc.clone();
+        if let Some((k, enc)) = cache.as_ref() {
+            if *k == key {
+                return enc.clone();
+            }
         }
-        let enc = resolve_encoder(ffmpeg, "auto").await;
-        *cache = Some(enc.clone());
+        let enc = resolve_encoder(ffmpeg, requested, av1).await;
+        *cache = Some((key, enc.clone()));
         enc
     }
 
@@ -132,11 +134,11 @@ impl RecordingEngine {
         std::fs::create_dir_all(&output_dir)?;
         let stem = format!("{}_{}", game.tag(), now.format("%Y-%m-%d_%H-%M-%S"));
 
-        let enc = self.pick_encoder(&ffmpeg, &config.encoder).await;
+        let enc = self.pick_encoder(&ffmpeg, &config.encoder, config.prefer_av1).await;
         let mut params = VideoParams {
             ffmpeg,
             fps: config.fps.clamp(15, 240),
-            bitrate_kbps: config.bitrate.clamp(1000, 150_000),
+            quality: config.quality.clone(),
             enc,
             resolution: config.resolution.clone(),
             game,
@@ -539,9 +541,9 @@ fn find_game_output(game: GameType) -> (u32, u32, u32) {
     }
 }
 
-/// FFmpeg ddagrab → H.264 MKV (video only, audio is captured separately).
+/// FFmpeg ddagrab → AV1/H.264 MKV (video only, audio is captured separately).
 fn build_video_command(p: &VideoParams, output: &Path, output_idx: u32, monitor_w: u32, monitor_h: u32) -> Command {
-    let hw_enc = matches!(p.enc.as_str(), "h264_nvenc" | "h264_amf");
+    let hw_enc = p.enc.ends_with("_nvenc") || p.enc.ends_with("_amf");
     let (w, h) = match p.resolution.as_str() {
         "1080p" if monitor_h > 1080 => (1920, 1080),
         "720p" if monitor_h > 720 => (1280, 720),
@@ -559,8 +561,6 @@ fn build_video_command(p: &VideoParams, output: &Path, output_idx: u32, monitor_
         format!("ddagrab=framerate={fps}:output_idx={output_idx},hwdownload,format=bgra,scale={w}:{h},format=nv12[v]")
     };
 
-    let br = p.bitrate_kbps;
-    let (b, maxrate, bufsize) = (format!("{br}k"), format!("{}k", br * 3 / 2), format!("{}k", br * 2));
     let gop = fps.to_string(); // 1 keyframe per second → precise clip cuts
 
     let mut cmd = ffmpeg_cmd(&p.ffmpeg);
@@ -569,18 +569,51 @@ fn build_video_command(p: &VideoParams, output: &Path, output_idx: u32, monitor_
         cmd.args(["-init_hw_device", "d3d11va=d3d"]);
     }
     cmd.args(["-filter_complex", &filter, "-map", "[v]", "-c:v", &p.enc]);
-    match p.enc.as_str() {
-        "h264_nvenc" => cmd.args(["-preset", "p4", "-tune", "hq", "-rc", "vbr"]),
-        "h264_amf" => cmd.args(["-quality", "balanced", "-rc", "vbr_peak"]),
-        "h264_qsv" => cmd.args(["-preset", "faster"]),
-        _ => cmd.args(["-preset", "veryfast"]),
-    };
-    cmd.args(["-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize, "-g", &gop]);
+    let rate = rate_control_args(&p.enc, &p.quality);
+    cmd.args(&rate);
+    cmd.args(["-g", &gop]);
     cmd.args(["-an", "-f", "matroska", "-y"]).arg(output);
     cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
     log::info!(
-        "ddagrab output_idx={} {}x{} @ {} fps, {} @ {} kbps ({})",
-        output_idx, w, h, fps, p.enc, br, if hw { "GPU zero-copy" } else { "CPU filter" }
+        "ddagrab output_idx={} {}x{} @ {} fps, {} quality={} {:?} ({})",
+        output_idx, w, h, fps, p.enc, p.quality, rate, if hw { "GPU zero-copy" } else { "CPU filter" }
     );
     cmd
+}
+
+/// Encoder settings for a quality preset.
+///
+/// NVENC and x264 use constant quality: bits go where the image moves
+/// (teamfights) instead of a fixed bitrate wasted on a static map. Measured on
+/// a 1440p60 LoL game: ~4.3 GB per 30 min at the old 20 Mb/s vs ~1.3 GB for
+/// AV1 "balanced" (VMAF 95, visually identical). AMF/QSV keep a capped VBR.
+fn rate_control_args(enc: &str, quality: &str) -> Vec<String> {
+    let q = match quality {
+        "light" => 0,
+        "high" => 2,
+        _ => 1,
+    };
+    let av1 = enc.starts_with("av1_");
+    let mbps = |m: u32| format!("{m}M");
+    let mut a: Vec<String> = Vec::new();
+    let mut push = |xs: &[&str]| a.extend(xs.iter().map(|x| x.to_string()));
+
+    if enc.ends_with("_nvenc") {
+        let (cq, max) = if av1 { ([38, 34, 30][q], [12, 16, 24][q]) } else { ([30, 27, 24][q], [16, 22, 30][q]) };
+        push(&["-preset", "p5", "-tune", "hq", "-rc", "vbr", "-b:v", "0"]);
+        push(&["-cq", &cq.to_string(), "-maxrate", &mbps(max), "-bufsize", &mbps(max * 2)]);
+    } else if enc == "libx264" {
+        let (crf, max) = ([28, 25, 22][q], [16, 22, 30][q]);
+        push(&["-preset", "veryfast", "-crf", &crf.to_string(), "-maxrate", &mbps(max), "-bufsize", &mbps(max * 2)]);
+    } else {
+        // AMF / QSV: average bitrate per preset.
+        let b = if av1 { [6, 9, 14][q] } else { [10, 14, 20][q] };
+        if enc.ends_with("_amf") {
+            push(&["-quality", "balanced", "-rc", "vbr_peak"]);
+        } else {
+            push(&["-preset", "faster"]);
+        }
+        push(&["-b:v", &mbps(b), "-maxrate", &format!("{}k", b * 1500), "-bufsize", &mbps(b * 2)]);
+    }
+    a
 }

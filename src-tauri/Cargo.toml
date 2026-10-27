@@ -1,6 +1,6 @@
 [package]
 name = "game-recorder"
-version = "0.1.0"
+version = "0.1.1"
 description = "GameRecorder — Enregistrement automatique LoL et Valorant"
 authors = []
 edition = "2021"
