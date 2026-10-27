@@ -242,3 +242,8 @@ H.264 20 Mb/s fixe ≈ 4,3 Go/30 min (97,8) · AV1 cq34 ≈ 1,3 Go (95,4) · AV1
   en natif, filtre CPU pour 1080p/720p, bascule CPU automatique si le GPU échoue.
 - Log fichier : `%LOCALAPPDATA%\com.gamerecorder.app\logs\gamerecorder.log`.
 - Version 0.1.1.
+
+## Session 6 — Fix vidéo rose (v0.1.2)
+- Cause : ddagrab étiquette ses frames en RGB ; après conversion YUV (NVENC/AMF ou swscale, BT.601 limité, mesuré), le flux restait tagué `colorspace=gbr` → image rose/violette (le décodeur AV1 respecte la matrice identité).
+- Fix : `setparams=range=tv:colorspace=smpte170m:color_primaries=bt709:color_trc=bt709` sur les deux chemins + `out_color_matrix=bt601:out_range=tv` sur le chemin CPU + flags couleur côté encodeur.
+- Vidéos AV1 existantes réparées sans réencodage : `-c copy -bsf:v av1_metadata=matrix_coefficients=6:color_range=0:transfer_characteristics=1`.

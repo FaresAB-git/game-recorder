@@ -555,10 +555,17 @@ fn build_video_command(p: &VideoParams, output: &Path, output_idx: u32, monitor_
     // Zero-copy (frames stay on the GPU) only at native resolution:
     // scale_d3d11 is broken in current FFmpeg builds, so resizing goes through the CPU.
     let hw = hw_enc && !p.cpu_filter && (w, h) == (monitor_w & !1, monitor_h & !1);
+    // ddagrab tags its frames as RGB. Once converted to YUV (by NVENC/AMF or by
+    // swscale, both BT.601 limited range) that tag must be replaced, otherwise
+    // the file says "GBR" and players show a pink/purple image.
+    let tag = "setparams=range=tv:colorspace=smpte170m:color_primaries=bt709:color_trc=bt709";
     let filter = if hw {
-        format!("ddagrab=framerate={fps}:output_idx={output_idx}[v]")
+        format!("ddagrab=framerate={fps}:output_idx={output_idx},{tag}[v]")
     } else {
-        format!("ddagrab=framerate={fps}:output_idx={output_idx},hwdownload,format=bgra,scale={w}:{h},format=nv12[v]")
+        format!(
+            "ddagrab=framerate={fps}:output_idx={output_idx},hwdownload,format=bgra,\
+             scale={w}:{h}:out_color_matrix=bt601:out_range=tv,format=nv12,{tag}[v]"
+        )
     };
 
     let gop = fps.to_string(); // 1 keyframe per second → precise clip cuts
@@ -572,6 +579,7 @@ fn build_video_command(p: &VideoParams, output: &Path, output_idx: u32, monitor_
     let rate = rate_control_args(&p.enc, &p.quality);
     cmd.args(&rate);
     cmd.args(["-g", &gop]);
+    cmd.args(["-color_range", "tv", "-colorspace", "smpte170m", "-color_primaries", "bt709", "-color_trc", "bt709"]);
     cmd.args(["-an", "-f", "matroska", "-y"]).arg(output);
     cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
     log::info!(
